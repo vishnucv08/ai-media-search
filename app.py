@@ -4,7 +4,7 @@ import faiss
 import os
 
 
-client = OpenAI()
+
 
 from sentence_transformers import SentenceTransformer
 
