@@ -1,125 +1,77 @@
 import streamlit as st
 import numpy as np
 import faiss
-import os
-
-
-
-
+from PIL import Image
+import matplotlib.pyplot as plt
 from sentence_transformers import SentenceTransformer
 
+# -------------------------------
+# Load model
+# -------------------------------
+@st.cache_resource
+def load_model():
+    return SentenceTransformer("all-MiniLM-L6-v2")
 
-# -----------------------------
-# Load embedding model
-# -----------------------------
-model = SentenceTransformer("all-MiniLM-L6-v2")
+model = load_model()
 
+st.title("🔍 AI Media Search System")
+st.write("Upload images and search using natural language")
 
-# -----------------------------
-# Read files
-# -----------------------------
-def load_files(folder):
+# -------------------------------
+# Upload Images
+# -------------------------------
+uploaded_files = st.file_uploader(
+    "Upload Images", type=["jpg", "jpeg", "png"], accept_multiple_files=True
+)
 
-    documents = []
+if uploaded_files:
+
+    images = []
     paths = []
+    descriptions = []
 
-    for file in os.listdir(folder):
+    # -------------------------------
+    # Convert images to descriptions
+    # -------------------------------
+    for file in uploaded_files:
+        img = Image.open(file).convert("RGB")
+        images.append(img)
+        paths.append(file.name)
 
-        path = os.path.join(folder, file)
+        # Simple description (can upgrade later)
+        descriptions.append(file.name)
 
-        if file.endswith(".txt"):
-
-            with open(path, "r", encoding="utf-8") as f:
-
-                text = f.read()
-
-                documents.append(text)
-
-                paths.append(path)
-
-    return documents, paths
-
-
-# -----------------------------
-# Split text into chunks
-# -----------------------------
-def split_chunks(text, size=200):
-
-    words = text.split()
-
-    chunks = []
-
-    for i in range(0, len(words), size):
-
-        chunk = " ".join(words[i:i+size])
-
-        chunks.append(chunk)
-
-    return chunks
-
-
-# -----------------------------
-# Build search index
-# -----------------------------
-def build_index(folder):
-
-    docs, paths = load_files(folder)
-
-    embeddings = []
-    chunk_paths = []
-    chunks = []
-
-    for doc, path in zip(docs, paths):
-
-        pieces = split_chunks(doc)
-
-        for p in pieces:
-
-            emb = model.encode(p)
-
-            embeddings.append(emb)
-
-            chunk_paths.append(path)
-
-            chunks.append(p)
-
+    # -------------------------------
+    # Create embeddings
+    # -------------------------------
+    embeddings = model.encode(descriptions)
     embeddings = np.array(embeddings).astype("float32")
 
+    # -------------------------------
+    # Build FAISS index
+    # -------------------------------
     dim = embeddings.shape[1]
-
     index = faiss.IndexFlatL2(dim)
-
     index.add(embeddings)
 
-    return index, chunk_paths, chunks
+    # -------------------------------
+    # Search Query
+    # -------------------------------
+    query = st.text_input("Enter search query")
 
+    if query:
+        query_vector = model.encode(query)
+        query_vector = np.array([query_vector]).astype("float32")
 
-# -----------------------------
-# Build index once
-# -----------------------------
-index, paths, chunks = build_index("test_folder")
+        k = min(6, len(paths))
+        distances, indices = index.search(query_vector, k)
 
+        st.subheader("🔎 Results")
 
-# -----------------------------
-# Streamlit UI
-# -----------------------------
-st.title("AI File Search")
+        cols = st.columns(3)
 
-query = st.text_input("Search your files")
+        for idx, i in enumerate(indices[0]):
+            with cols[idx % 3]:
+                st.image(images[i], caption=paths[i], use_container_width=True)
 
-
-if query:
-
-    q_emb = model.encode([query]).astype("float32")
-
-    distances, indices = index.search(q_emb, 5)
-
-    st.subheader("Most relevant results")
-
-    for rank, i in enumerate(indices[0]):
-
-        st.write("File:", paths[i])
-
-        st.write("Text:", chunks[i])
-
-        st.write("---")
+        
